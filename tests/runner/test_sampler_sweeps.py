@@ -24,8 +24,9 @@ import torch
 from vllm.utils.math_utils import cdiv
 
 from tests.runner.precompile_sweep_checks import ops_outside_aten as _ops_outside_aten
+from vllm_torchtpu.layers.adapter.sample import repetition_penalty
 from vllm_torchtpu.layers.adapter.sample.top_k_top_p import CANDIDATE_BLOCK
-from vllm_torchtpu.runner import repetition_penalty, tpu_runner
+from vllm_torchtpu.runner import tpu_runner
 from vllm_torchtpu.runner.tpu_runner import TPUModelRunner
 from vllm_torchtpu.structured_decoding import StructuredDecodingManager
 

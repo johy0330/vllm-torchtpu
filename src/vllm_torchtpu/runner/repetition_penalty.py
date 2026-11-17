@@ -24,7 +24,8 @@ seen-token bitmask per request id (``RepetitionPenaltyTracker``).
 For each penalized request, ``SeenTokenBitmask`` packs presence bits over
 vocabulary ids ``[0, vocab_size)`` from ``prompt_token_ids`` and the output ids
 into ``cdiv(vocab_size, 32)`` ``int32`` words (out-of-range ids such as
-multimodal placeholders are ignored). On device, the bitmask is unpacked and
+multimodal placeholders are ignored). On device
+(``layers/adapter/sample/repetition_penalty.py``), the bitmask is unpacked and
 seen positions are scaled in ``float32`` by ``1 / penalty`` where
 ``logits > 0`` and ``penalty`` otherwise before casting back to
 ``logits.dtype``.
@@ -46,7 +47,7 @@ import numpy as np
 import torch
 from vllm.utils.math_utils import cdiv
 
-from vllm_torchtpu.layers.adapter.sample.token_bitmask import unpack_token_bitmask
+from vllm_torchtpu.layers.adapter.sample import repetition_penalty as penalty_op
 from vllm_torchtpu.logger import init_logger
 
 if TYPE_CHECKING:
@@ -229,43 +230,4 @@ def apply_penalties_table(
     device = logits.device
     seen_bitmask = torch.from_numpy(seen_bitmask_np).to(device)
     penalties = torch.from_numpy(penalties_np).to(device)
-    return apply_repetition_penalty(logits, seen_bitmask, penalties)
-
-
-@torch.compile(backend="tpu", fullgraph=True, dynamic=False)
-def apply_repetition_penalty(
-    logits: torch.Tensor,
-    seen_bitmask: torch.Tensor,
-    penalties: torch.Tensor,
-) -> torch.Tensor:
-    return _apply_repetition_penalty(logits, seen_bitmask, penalties)
-
-
-def _apply_repetition_penalty(
-    logits: torch.Tensor,
-    seen_bitmask: torch.Tensor,
-    penalties: torch.Tensor,
-) -> torch.Tensor:
-    """Unpack ``seen_bitmask`` (``[rows, cdiv(vocab_size, 32)]`` ``int32``) and
-    scale ``logits`` in ``float32`` by ``1 / penalties`` where ``logits > 0`` and
-    ``penalties`` otherwise on seen positions, preserving ``logits.dtype``."""
-    shifts = torch.arange(32, dtype=torch.int32, device=seen_bitmask.device)
-    seen_mask = unpack_token_bitmask(seen_bitmask, shifts, logits.shape[-1])
-    scaled = scale_seen_logits(logits.to(torch.float32), seen_mask, penalties)
-    return scaled.to(logits.dtype)
-
-
-def scale_seen_logits(
-    logits: torch.Tensor, seen: torch.Tensor, penalties: torch.Tensor
-) -> torch.Tensor:
-    """vLLM's ``repetition_penalty`` on ``logits [rows, vocab]``.
-
-    Where ``seen`` is set, positive logits are multiplied by ``1 / penalties``
-    and the others by ``penalties`` (``[rows, 1]``), as vLLM's
-    ``apply_repetition_penalties`` does. The reciprocal is taken per row,
-    before the broadcast to ``vocab``. The exported sampler keeps a copy
-    (``experimental/export/sampling.py``); ``test_sampler_parity.py`` checks
-    that the two agree bit for bit.
-    """
-    scale = torch.where(logits > 0, 1.0 / penalties, penalties)
-    return torch.where(seen, logits * scale, logits)
+    return penalty_op.apply_repetition_penalty(logits, seen_bitmask, penalties)

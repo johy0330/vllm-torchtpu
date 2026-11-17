@@ -29,6 +29,7 @@ from vllm.v1.outputs import LogprobsTensors
 from vllm.v1.sample.logits_processor import LogitsProcessors
 from vllm.v1.worker.gpu_input_batch import CachedRequestState, InputBatch
 
+from vllm_torchtpu.layers.adapter.sample import repetition_penalty as penalty_op
 from vllm_torchtpu.runner import greedy_top_tokens, min_tokens
 from vllm_torchtpu.runner import repetition_penalty as rep_pen
 from vllm_torchtpu.runner.tpu_runner import TPUModelRunner
@@ -453,7 +454,7 @@ class TestRunnerIntegration:
         runner._dummy_logits = lambda n: torch.zeros(n, 12, dtype=torch.bfloat16)
         runner._precompile_timed = MagicMock()
         apply_calls: list[tuple[int, int, torch.dtype, tuple[int, int]]] = []
-        orig_apply = rep_pen.apply_repetition_penalty
+        orig_apply = penalty_op.apply_repetition_penalty
 
         def spy_apply(logits, seen_bitmask, penalties):
             assert seen_bitmask.dtype == torch.int32
@@ -467,7 +468,9 @@ class TestRunnerIntegration:
             )
             return orig_apply(logits, seen_bitmask, penalties)
 
-        with patch.object(rep_pen, "apply_repetition_penalty", side_effect=spy_apply):
+        with patch.object(
+            penalty_op, "apply_repetition_penalty", side_effect=spy_apply
+        ):
             runner._precompile_repetition_penalty()
 
         assert apply_calls == expected
@@ -486,7 +489,7 @@ def test_precompile_covers_the_calls_serving_makes():
     runner._dummy_logits = lambda n: torch.zeros(n, 40, dtype=torch.bfloat16)
     runner._precompile_timed = MagicMock()
     calls = set()
-    orig_apply = rep_pen.apply_repetition_penalty
+    orig_apply = penalty_op.apply_repetition_penalty
 
     def spy_apply(logits, seen_bitmask, penalties):
         calls.add(
@@ -501,7 +504,7 @@ def test_precompile_covers_the_calls_serving_makes():
         )
         return orig_apply(logits, seen_bitmask, penalties)
 
-    with patch.object(rep_pen, "apply_repetition_penalty", side_effect=spy_apply):
+    with patch.object(penalty_op, "apply_repetition_penalty", side_effect=spy_apply):
         runner._precompile_repetition_penalty()
         precompiled, calls = calls, set()
         rows = {"r0": (1.3, [7])}

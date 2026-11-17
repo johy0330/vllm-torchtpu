@@ -130,6 +130,9 @@ from vllm_torchtpu.layers.adapter.custom_ops.mamba_state_copy_op import (
 )
 from vllm_torchtpu.layers.adapter.quantization import get_tpu_quantization_config
 from vllm_torchtpu.layers.adapter.quantization.online_fp8 import validate_online_fp8
+from vllm_torchtpu.layers.adapter.sample import (
+    repetition_penalty as repetition_penalty_op,
+)
 from vllm_torchtpu.layers.adapter.sample.rejection_sampler import RejectionSampler
 from vllm_torchtpu.layers.adapter.sample.top_k_top_p import (
     CANDIDATE_BLOCK,
@@ -157,7 +160,7 @@ from vllm_torchtpu.platforms.pcp_validation import PcpStaticSupportValidator
 from vllm_torchtpu.platforms.tpu_block_size_utils import unified_kv_layout_enabled
 from vllm_torchtpu.runner import greedy_top_tokens
 from vllm_torchtpu.runner import min_tokens as min_tokens_mask
-from vllm_torchtpu.runner import repetition_penalty as repetition_penalty_ops
+from vllm_torchtpu.runner import repetition_penalty as repetition_penalty_tracker
 from vllm_torchtpu.runner import utils as runner_utils
 from vllm_torchtpu.runner.kernel_block_table import install_kernel_block_tables
 from vllm_torchtpu.runner.kv_cache_manager import KVCacheManager
@@ -1068,7 +1071,7 @@ class TPUModelRunner(GPUModelRunner):
         self.execute_model_state: ExecuteModelState | None = None
         self._pre_async_results: AsyncPreResults | None = None
         self._min_tokens = min_tokens_mask.MinTokensTracker()
-        self._repetition_penalty = repetition_penalty_ops.RepetitionPenaltyTracker(
+        self._repetition_penalty = repetition_penalty_tracker.RepetitionPenaltyTracker(
             self.vocab_size,
             self.max_num_reqs,
             async_scheduling=self.scheduler_config.async_scheduling,
@@ -6851,7 +6854,7 @@ class TPUModelRunner(GPUModelRunner):
                 penalties = torch.ones(
                     (num_rows, 1), dtype=torch.float32, device=self.device
                 )
-                out = repetition_penalty_ops.apply_repetition_penalty(
+                out = repetition_penalty_op.apply_repetition_penalty(
                     logits, seen_bitmask, penalties
                 )
                 synchronize_tensors(out)

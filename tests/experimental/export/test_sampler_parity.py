@@ -19,7 +19,8 @@ import pytest
 import torch
 
 from vllm_torchtpu.experimental.export import random_sample, sampling
-from vllm_torchtpu.runner import repetition_penalty, tpu_runner
+from vllm_torchtpu.layers.adapter.sample import repetition_penalty
+from vllm_torchtpu.runner import tpu_runner
 from vllm_torchtpu.runner.tpu_runner import TPUModelRunner
 
 
